@@ -31,6 +31,9 @@ dependencies {
     testImplementation "org.projectlombok:lombok"
     testAnnotationProcessor "org.projectlombok:lombok"
 
+    /* FCM (Firebase Cloud Messaging) */
+    implementation 'com.google.firebase:firebase-admin:9.1.1'
+
     /* Testing */
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.amqp:spring-rabbit-test'
