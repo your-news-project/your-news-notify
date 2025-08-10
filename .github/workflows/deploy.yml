@@ -1,0 +1,63 @@
+name: Deploy - notify
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy-notify:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. push된 커밋 기준 코드 내려 받기
+      - name: Checkout PR
+        uses: actions/checkout@v3
+
+      # 2. 자바 환경 설정
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # 3. Firebase를 위한 JSON 파일 생성
+      - name: Create Json
+        uses: jsdaniell/create-json@v1.2.2
+        with:
+          name: "./src/main/resources/your-news-735fe-firebase-adminsdk-fbsvc-bfc443350c.json"
+          json: ${{ secrets.FIREBASE_PRODUCTION_JSON }}
+
+      # 4. Build Gradle
+      - name: Build notify
+        run: |
+          chmod +x ./gradlew
+          ./gradlew build -x test
+
+      # 5. 현재 커밋의 짧은 SHA 값을 가져와 VERSION 환경변수로 등록
+      - name: Set VERSION from short SHA
+        id: version
+        run: |
+          echo "VERSION=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      # 6. Docker 이미지 build 및 push
+      - name: Docker Build & Push
+        run: |
+          docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/yournews-notify:$VERSION .
+          docker tag ${{ secrets.DOCKER_USERNAME }}/yournews-notify:$VERSION ${{ secrets.DOCKER_USERNAME }}/yournews-notify:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/yournews-notify:$VERSION
+          docker push ${{ secrets.DOCKER_USERNAME }}/yournews-notify:latest
+
+      # 7. ec2 pull
+      - name: Deploy to server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          port: ${{ secrets.SERVER_SSH_PORT }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_KEY }}
+          script: |
+            docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+            docker system prune -a -f
+            docker pull ${{ secrets.DOCKER_USERNAME }}/yournews-notify:latest
+            docker-compose up -d yournews-notify
