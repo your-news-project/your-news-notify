@@ -16,7 +16,10 @@ spring:
 rabbitmq:
   queue-name: ${RABBITMQ_QUEUE_NAME:queue}
   exchange-name: ${RABBITMQ_EXCHANGE_NAME:exchange}
+  retry-exchange-name: ${RABBITMQ_RETRY_EXCHANGE_NAME:retry.exchange}
+  dead-exchange-name: ${RABBITMQ_DEAD_EXCHANGE_NAME:dead.exchange}
   routing-key: ${RABBITMQ_ROUTING_KEY:key}
+  retry-ttl: ${RABBITMQ_RETRY_TTL:5000}
 
 --- # firebase
 firebase:
