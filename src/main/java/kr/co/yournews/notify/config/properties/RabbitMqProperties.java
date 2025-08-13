@@ -11,5 +11,8 @@ import org.springframework.stereotype.Component;
 public class RabbitMqProperties {
     private String queueName;
     private String exchangeName;
+    private String retryExchangeName;
+    private String deadExchangeName;
     private String routingKey;
+    private int retryTtl;
 }
