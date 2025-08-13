@@ -9,15 +9,12 @@ import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
-import org.springframework.amqp.rabbit.config.RetryInterceptorBuilder;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
-import org.springframework.amqp.rabbit.retry.RejectAndDontRequeueRecoverer;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.retry.interceptor.RetryOperationsInterceptor;
 
 @Slf4j
 @Configuration
@@ -25,50 +22,81 @@ import org.springframework.retry.interceptor.RetryOperationsInterceptor;
 public class RabbitMqConfig {
     private final RabbitMqProperties rabbitMqProperties;
 
+    @Bean
+    DirectExchange mainExchange() {
+        return new DirectExchange(rabbitMqProperties.getExchangeName());
+    }
+
+    @Bean
+    DirectExchange retryExchange() {
+        return new DirectExchange(rabbitMqProperties.getRetryExchangeName());
+    }
+
+    @Bean
+    DirectExchange deadExchange() {
+        return new DirectExchange(rabbitMqProperties.getDeadExchangeName());
+    }
+
     /**
-     * 일반 메시지 처리용 Queue 생성
+     * Main Queue (일반 메시지 처리용) 생성
+     * 소비 실패 시, Retry 큐로 이동
      */
     @Bean
-    public Queue queue() {
+    public Queue mainQueue() {
         return QueueBuilder.durable(rabbitMqProperties.getQueueName())
-                .withArgument("x-dead-letter-exchange", rabbitMqProperties.getExchangeName())
-                .withArgument("x-dead-letter-routing-key", rabbitMqProperties.getRoutingKey() + ".dlq")
+                .withArgument("x-dead-letter-exchange", rabbitMqProperties.getRetryExchangeName())
+                .withArgument("x-dead-letter-routing-key", rabbitMqProperties.getRoutingKey() + ".retry")
                 .build();
+    }
+
+    /**
+     * Main Queue - Exchange 바인딩
+     */
+    @Bean
+    public Binding mainBinding(Queue mainQueue, DirectExchange mainExchange) {
+        return BindingBuilder.bind(mainQueue)
+                .to(mainExchange)
+                .with(rabbitMqProperties.getRoutingKey());
+    }
+
+    /**
+     * Retry Queue 생성
+     * TTL만큼 대기 후, 재처리를 위해 메인 큐로 이동
+     */
+    @Bean
+    public Queue retryQueue() {
+        return QueueBuilder.durable(rabbitMqProperties.getQueueName() + ".retry")
+                .withArgument("x-message-ttl", rabbitMqProperties.getRetryTtl())
+                .withArgument("x-dead-letter-exchange", rabbitMqProperties.getExchangeName())
+                .withArgument("x-dead-letter-routing-key", rabbitMqProperties.getRoutingKey())
+                .build();
+    }
+
+    /**
+     * Retry Queue - Exchange 바인딩
+     */
+    @Bean
+    public Binding retryBinding(Queue retryQueue, DirectExchange retryExchange) {
+        return BindingBuilder.bind(retryQueue)
+                .to(retryExchange)
+                .with(rabbitMqProperties.getRoutingKey() + ".retry");
     }
 
     /**
      * Dead Letter Queue 생성 (처리 실패 메시지 저장용)
      */
     @Bean
-    public Queue deadLetterQueue() {
+    public Queue deadQueue() {
         return new Queue(rabbitMqProperties.getQueueName() + ".dlq", true);
-    }
-
-    /**
-     * DirectExchange 생성
-     */
-    @Bean
-    public DirectExchange exchange() {
-        return new DirectExchange(rabbitMqProperties.getExchangeName());
-    }
-
-    /**
-     * Queue - Exchange 바인딩
-     */
-    @Bean
-    public Binding binding(Queue queue, DirectExchange exchange) {
-        return BindingBuilder.bind(queue)
-                .to(exchange)
-                .with(rabbitMqProperties.getRoutingKey());
     }
 
     /**
      * DeadLetterQueue - Exchange 바인딩
      */
     @Bean
-    public Binding deadLetterBinding(Queue deadLetterQueue, DirectExchange exchange) {
-        return BindingBuilder.bind(deadLetterQueue)
-                .to(exchange)
+    public Binding deadBinding(Queue deadQueue, DirectExchange deadExchange) {
+        return BindingBuilder.bind(deadQueue)
+                .to(deadExchange)
                 .with(rabbitMqProperties.getRoutingKey() + ".dlq");
     }
 
@@ -87,23 +115,10 @@ public class RabbitMqConfig {
         factory.setConcurrentConsumers(processors * 2);
         factory.setMaxConcurrentConsumers(processors * 3);
         factory.setPrefetchCount(10);
-        factory.setAdviceChain(retryInterceptor());
         factory.setAcknowledgeMode(AcknowledgeMode.AUTO);
-        return factory;
-    }
+        factory.setDefaultRequeueRejected(false);
 
-    /**
-     * 재시도 정책 설정
-     */
-    public RetryOperationsInterceptor retryInterceptor() {
-        return RetryInterceptorBuilder.stateless()
-                .maxAttempts(3)
-                .backOffOptions(500, 2.0, 3000)  // 초기 0.5초, 배수 2.0, 최대 3초
-                .recoverer((message, cause) -> {
-                    log.error("Message failed after retries: {}. Cause: {}", message, cause.getMessage(), cause);
-                    new RejectAndDontRequeueRecoverer().recover(message, cause);
-                })
-                .build();
+        return factory;
     }
 
     /**
