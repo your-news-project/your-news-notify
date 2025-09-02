@@ -43,10 +43,5 @@
 
 ---
 
-## 🏗️ Multi Module Architecture
-![image](https://github.com/user-attachments/assets/cc0e5376-d95a-49be-bdaa-ba678f1e8cc0)
-
----
-
 ## 🗄️ ERD
 <img width="979" alt="erd" src="https://github.com/user-attachments/assets/b9814a35-c928-4b32-8744-a1f296c8a923" />
