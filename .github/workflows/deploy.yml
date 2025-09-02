@@ -71,5 +71,5 @@ jobs:
             --comment "Deploy yournews-notify via GitHub Actions" \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --region ap-northeast-2 \
-            --parameters commands='bash /home/ssm-user/script/deploy.sh' \
+            --parameters commands='bash /home/ubuntu/script/deploy.sh' \
             --output text
