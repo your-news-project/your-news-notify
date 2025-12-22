@@ -57,7 +57,9 @@ class FcmNotificationConsumerTest {
             new FcmMessageDto(
                     "token",
                     "title",
-                    "publicId",
+                    "content",
+                    "notification",
+                    "public-id",
                     true,
                     false
             );
