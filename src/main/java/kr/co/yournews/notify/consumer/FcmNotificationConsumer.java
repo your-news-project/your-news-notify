@@ -3,7 +3,6 @@ package kr.co.yournews.notify.consumer;
 import kr.co.yournews.notify.config.properties.RabbitMqProperties;
 import kr.co.yournews.notify.consumer.dto.FcmMessageDto;
 import kr.co.yournews.notify.fcm.sender.FcmNotificationSender;
-import kr.co.yournews.notify.fcm.sender.constant.FcmConstant;
 import kr.co.yournews.notify.fcm.sender.exception.FcmSendFailureException;
 import kr.co.yournews.notify.fcm.sender.response.FcmSendResult;
 import kr.co.yournews.notify.fcm.token.service.FcmTokenService;
@@ -44,17 +43,16 @@ public class FcmNotificationConsumer {
      *
      * @param message : (FCM 토큰, 알림 제목, 알림 내용)
      */
-    @RabbitListener(queues = "${rabbitmq.queue-name}", containerFactory = "rabbitListenerContainerFactory")
+    @RabbitListener(queues = "${rabbitmq.queue-name}", containerFactory = "fcmListenerContainerFactory")
     public void handleMessage(@Payload FcmMessageDto message, Message amqpMessage) {
         if (message.isFirst()) {
-            log.info("[FCM] 소식 단위 전송 시작 (추정) - title: {}", message.title());
+            log.info("[FCM] 알림 전송 시작 (추정) - title: {}", message.title());
         }
 
-        String content = FcmConstant.NEWS_NOTIFICATION_CONTENT;
-        Map<String, String> data = buildMessageData(message.data());
+        Map<String, String> data = buildMessageData(message.target(), message.info());
 
         FcmSendResult result = fcmNotificationSender.sendNotification(
-                message.token(), message.title(), content, data
+                message.token(), message.title(), message.content(), data
         );
 
         // 비재시도: 잘못된/만료 토큰
@@ -88,21 +86,22 @@ public class FcmNotificationConsumer {
             throw new FcmSendFailureException(result.message());
         }
 
-
         if (message.isLast()) {
-            log.info("[FCM] 소식 단위 전송 완료 (추정) - title: {}", message.title());
+            log.info("[FCM] 알림 전송 완료 (추정) - title: {}", message.title());
         }
     }
 
     /**
      * Notification data 생성 메서드
      *
-     * @param publicId : 알림 추가 데이터
+     * @param target : 알림 타입
+     * @param info   : 알림 타입별 데이터
      * @return data가 저장된 Map 자료구조
      */
-    private Map<String, String> buildMessageData(String publicId) {
+    private Map<String, String> buildMessageData(String target, String info) {
         Map<String, String> data = new HashMap<>();
-        data.put("publicId", publicId);
+        data.put("target", target);
+        data.put("info", info);
         return data;
     }
 

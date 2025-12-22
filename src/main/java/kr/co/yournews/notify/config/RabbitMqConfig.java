@@ -104,7 +104,7 @@ public class RabbitMqConfig {
      * 메시지 리스너 컨테이너 설정
      */
     @Bean
-    public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
+    public SimpleRabbitListenerContainerFactory fcmListenerContainerFactory(
             ConnectionFactory connectionFactory
     ) {
         int processors = Runtime.getRuntime().availableProcessors();
