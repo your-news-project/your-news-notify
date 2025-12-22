@@ -3,7 +3,9 @@ package kr.co.yournews.notify.consumer.dto;
 public record FcmMessageDto(
         String token,
         String title,
-        String data,
+        String content,
+        String target,
+        String info,
         boolean isFirst,
         boolean isLast
 ) {
