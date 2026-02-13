@@ -6,15 +6,19 @@ import kr.co.yournews.notify.fcm.sender.FcmNotificationSender;
 import kr.co.yournews.notify.fcm.sender.exception.FcmSendFailureException;
 import kr.co.yournews.notify.fcm.sender.response.FcmSendResult;
 import kr.co.yournews.notify.fcm.token.service.FcmTokenService;
+import kr.co.yournews.notify.redis.RedisConstant;
+import kr.co.yournews.notify.redis.RedisRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,11 +31,18 @@ public class FcmNotificationConsumer {
     private final FcmTokenService fcmTokenService;
     private final RabbitMqProperties rabbitMqProperties;
     private final RabbitTemplate rabbitTemplate;
+    private final RedisRepository redisRepository;
 
     private static final int MAX_RETRY = 3;                 // 재시도 횟수
     private static final String X_DEATH = "x-death";        // Rabbit header key
     private static final String HDR_QUEUE = "queue";        // x-death 필드
     private static final String HDR_COUNT = "count";        // x-death 필드
+
+    @Value("${fcm.idempotency.processing-ttl}")
+    private Duration processingTtl;
+
+    @Value("${fcm.idempotency.done-ttl}")
+    private Duration doneTtl;
 
     /**
      * RabbitMQ로부터 수신된 FCM 메시지를 처리하는 메서드
@@ -45,6 +56,13 @@ public class FcmNotificationConsumer {
      */
     @RabbitListener(queues = "${rabbitmq.queue-name}", containerFactory = "fcmListenerContainerFactory")
     public void handleMessage(@Payload FcmMessageDto message, Message amqpMessage) {
+        String idempKey = RedisConstant.getKey(message.info(), message.token());
+
+        if (!redisRepository.tryBegin(idempKey, processingTtl)) {
+            log.info("[FCM] 중복/처리중 스킵 - key={}", idempKey);
+            return;
+        }
+
         if (message.isFirst()) {
             log.info("[FCM] 알림 전송 시작 (추정) - title: {}", message.title());
         }
@@ -59,6 +77,7 @@ public class FcmNotificationConsumer {
         if (result.shouldRemoveToken()) {
             log.warn("[FCM] 유효하지 않은 토큰 삭제 - token: {}", message.token());
             fcmTokenService.removeByToken(message.token());
+            redisRepository.markDone(idempKey, doneTtl);
             return;
         }
 
@@ -78,13 +97,17 @@ public class FcmNotificationConsumer {
                         message
                 );
 
+                redisRepository.markDone(idempKey, doneTtl);
                 log.error("[FCM] 최종 실패 → DLQ로 이동 - token: {}", message.token());
                 return;
             }
 
+            redisRepository.clear(idempKey);
             // 컷오프 전: 예외 던져 NACK → 재시도 큐로 이동
             throw new FcmSendFailureException(result.message());
         }
+
+        redisRepository.markDone(idempKey, doneTtl);
 
         if (message.isLast()) {
             log.info("[FCM] 알림 전송 완료 (추정) - title: {}", message.title());
