@@ -6,6 +6,7 @@ import kr.co.yournews.notify.fcm.sender.FcmNotificationSender;
 import kr.co.yournews.notify.fcm.sender.exception.FcmSendFailureException;
 import kr.co.yournews.notify.fcm.sender.response.FcmSendResult;
 import kr.co.yournews.notify.fcm.token.service.FcmTokenService;
+import kr.co.yournews.notify.redis.RedisRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,6 +47,9 @@ class FcmNotificationConsumerTest {
     @Mock
     private RabbitMqProperties rabbitMqProperties;
 
+    @Mock
+    private RedisRepository redisRepository;
+
     @InjectMocks
     private FcmNotificationConsumer fcmNotificationConsumer;
 
@@ -77,6 +81,7 @@ class FcmNotificationConsumerTest {
     @DisplayName("컷오프 도달 ⇒ DLQ로 수동 전송")
     void cutoffThenSendToDlq() {
         // given
+        when(redisRepository.tryBegin(anyString(), any())).thenReturn(true);
         when(rabbitMqProperties.getQueueName()).thenReturn(QUEUE);
         when(rabbitMqProperties.getDeadExchangeName()).thenReturn(DEAD_EXCHANGE);
         when(rabbitMqProperties.getRoutingKey()).thenReturn(ROUTING_KEY);
@@ -99,6 +104,7 @@ class FcmNotificationConsumerTest {
     @DisplayName("컷오프 미도달 ⇒ RuntimeException 던져 재시도 큐로 이동")
     void notCutoffThenThrowForRetry() {
         // given
+        when(redisRepository.tryBegin(anyString(), any())).thenReturn(true);
         when(rabbitMqProperties.getQueueName()).thenReturn(QUEUE);
 
         when(fcmNotificationSender.sendNotification(anyString(), anyString(), anyString(), anyMap()))
@@ -118,6 +124,7 @@ class FcmNotificationConsumerTest {
     @DisplayName("비재시도 케이스 ⇒ 토큰 삭제")
     void nonRetryRemoveInvalidToken() {
         // given
+        when(redisRepository.tryBegin(anyString(), any())).thenReturn(true);
         when(fcmNotificationSender.sendNotification(anyString(), anyString(), anyString(), anyMap()))
                 .thenReturn(FcmSendResult.invalidToken("bad-token"));
 
