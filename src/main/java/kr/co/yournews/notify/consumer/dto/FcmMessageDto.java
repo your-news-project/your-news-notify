@@ -5,8 +5,6 @@ public record FcmMessageDto(
         String title,
         String content,
         String target,
-        String info,
-        boolean isFirst,
-        boolean isLast
+        String info
 ) {
 }
