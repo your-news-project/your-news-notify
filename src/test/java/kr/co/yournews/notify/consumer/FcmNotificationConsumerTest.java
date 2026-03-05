@@ -5,25 +5,19 @@ import kr.co.yournews.notify.consumer.dto.FcmMessageDto;
 import kr.co.yournews.notify.fcm.sender.FcmNotificationSender;
 import kr.co.yournews.notify.fcm.sender.exception.FcmSendFailureException;
 import kr.co.yournews.notify.fcm.sender.response.FcmSendResult;
-import kr.co.yournews.notify.fcm.token.service.FcmTokenService;
-import kr.co.yournews.notify.redis.RedisRepository;
+import kr.co.yournews.notify.message.process.model.MessageProcessStatus;
+import kr.co.yournews.notify.message.process.model.MessageProcessClaim;
+import kr.co.yournews.notify.message.process.service.MessageProcessService;
+import kr.co.yournews.notify.token.service.FcmTokenService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.core.Message;
-import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -48,12 +42,11 @@ class FcmNotificationConsumerTest {
     private RabbitMqProperties rabbitMqProperties;
 
     @Mock
-    private RedisRepository redisRepository;
+    private MessageProcessService processService;
 
     @InjectMocks
     private FcmNotificationConsumer fcmNotificationConsumer;
 
-    private static final String QUEUE = "queue";
     private static final String DEAD_EXCHANGE = "dead.exchange";
     private static final String ROUTING_KEY = "key";
 
@@ -63,40 +56,27 @@ class FcmNotificationConsumerTest {
                     "title",
                     "content",
                     "notification",
-                    "public-id",
-                    true,
-                    false
+                    "public-id"
             );
-
-    private Message amqpWithXDeath(long count) {
-        MessageProperties mp = new MessageProperties();
-        Map<String, Object> death = new HashMap<>();
-        death.put("queue", QUEUE);
-        death.put("count", count);
-        mp.setHeader("x-death", List.of(death));
-        return new Message(new byte[0], mp);
-    }
 
     @Test
     @DisplayName("컷오프 도달 ⇒ DLQ로 수동 전송")
     void cutoffThenSendToDlq() {
         // given
-        when(redisRepository.tryBegin(anyString(), any())).thenReturn(true);
-        when(rabbitMqProperties.getQueueName()).thenReturn(QUEUE);
+        when(processService.claim(anyString(), anyString(), eq(3)))
+                .thenReturn(MessageProcessClaim.claimed(3));
         when(rabbitMqProperties.getDeadExchangeName()).thenReturn(DEAD_EXCHANGE);
         when(rabbitMqProperties.getRoutingKey()).thenReturn(ROUTING_KEY);
         when(fcmNotificationSender.sendNotification(anyString(), anyString(), anyString(), anyMap()))
                 .thenReturn(FcmSendResult.failure("any-error"));
 
-        // deathCount = 2 → nextAttempt = 3 → MAX_RETRY = 3 도달
-        Message amqp = amqpWithXDeath(2);
-
         // when
-        fcmNotificationConsumer.handleMessage(dto, amqp);
+        fcmNotificationConsumer.handleMessage(dto);
 
         // then
         verify(rabbitTemplate, times(1))
                 .convertAndSend(eq(DEAD_EXCHANGE), eq(ROUTING_KEY + ".dlq"), eq(dto));
+        verify(processService, times(1)).markFailedRetryExhausted(anyString(), eq("any-error"));
         verify(fcmTokenService, never()).removeByToken(anyString());
     }
 
@@ -104,37 +84,49 @@ class FcmNotificationConsumerTest {
     @DisplayName("컷오프 미도달 ⇒ RuntimeException 던져 재시도 큐로 이동")
     void notCutoffThenThrowForRetry() {
         // given
-        when(redisRepository.tryBegin(anyString(), any())).thenReturn(true);
-        when(rabbitMqProperties.getQueueName()).thenReturn(QUEUE);
-
+        when(processService.claim(anyString(), anyString(), eq(3)))
+                .thenReturn(MessageProcessClaim.claimed(1));
         when(fcmNotificationSender.sendNotification(anyString(), anyString(), anyString(), anyMap()))
                 .thenReturn(FcmSendResult.failure("retryable"));
 
-        // deathCount = 1 → nextAttempt = 2 → MAX_RETRY = 3 미도달
-        Message amqp = amqpWithXDeath(1);
-
         // when & then
         assertThrows(FcmSendFailureException.class,
-                () -> fcmNotificationConsumer.handleMessage(dto, amqp));
+                () -> fcmNotificationConsumer.handleMessage(dto));
 
-        verify(rabbitTemplate, never()).convertAndSend(anyString(), Optional.of(anyString()), any(), any());
+        verify(processService, times(1)).markRetryPending(anyString(), eq("retryable"));
+        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), eq(dto));
     }
 
     @Test
-    @DisplayName("비재시도 케이스 ⇒ 토큰 삭제")
+    @DisplayName("비재시도 케이스 ⇒ 토큰 삭제 + 영구 실패 마킹")
     void nonRetryRemoveInvalidToken() {
         // given
-        when(redisRepository.tryBegin(anyString(), any())).thenReturn(true);
+        when(processService.claim(anyString(), anyString(), eq(3)))
+                .thenReturn(MessageProcessClaim.claimed(1));
         when(fcmNotificationSender.sendNotification(anyString(), anyString(), anyString(), anyMap()))
                 .thenReturn(FcmSendResult.invalidToken("bad-token"));
 
-        Message amqp = amqpWithXDeath(3);
-
         // when
-        fcmNotificationConsumer.handleMessage(dto, amqp);
+        fcmNotificationConsumer.handleMessage(dto);
 
         // then
         verify(fcmTokenService, times(1)).removeByToken(eq("token"));
-        verify(rabbitTemplate, never()).convertAndSend(anyString(), Optional.of(anyString()), any(), any());
+        verify(processService, times(1)).markFailedPermanent(anyString(), eq("bad-token"));
+        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), eq(dto));
+    }
+
+    @Test
+    @DisplayName("기처리 상태면 중복 처리 스킵")
+    void skipWhenAlreadyProcessed() {
+        // given
+        when(processService.claim(anyString(), anyString(), eq(3)))
+                .thenReturn(MessageProcessClaim.skipped(3, MessageProcessStatus.SUCCEEDED));
+
+        // when
+        fcmNotificationConsumer.handleMessage(dto);
+
+        // then
+        verify(fcmNotificationSender, never()).sendNotification(anyString(), anyString(), anyString(), anyMap());
+        verify(processService, never()).markSuccess(anyString());
     }
 }

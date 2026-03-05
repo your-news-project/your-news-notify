@@ -1,4 +1,4 @@
-package kr.co.yournews.notify.fcm.token.repository;
+package kr.co.yournews.notify.token.repository;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;

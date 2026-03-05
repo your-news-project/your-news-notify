@@ -1,6 +1,6 @@
-package kr.co.yournews.notify.fcm.token.service;
+package kr.co.yournews.notify.token.service;
 
-import kr.co.yournews.notify.fcm.token.repository.FcmTokenRepository;
+import kr.co.yournews.notify.token.repository.FcmTokenRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

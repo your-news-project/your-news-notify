@@ -24,17 +24,3 @@ rabbitmq:
 --- # firebase
 firebase:
   key: ${FIREBASE_KEY}
-
---- # redis
-spring:
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASS:}
-
---- # idempotent ttl
-fcm:
-  idempotency:
-    processing-ttl: ${PROCESSING_TTL:45s}
-    done-ttl: ${DONE_TTL:1h}

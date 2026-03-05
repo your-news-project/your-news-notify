@@ -1,6 +1,6 @@
-package kr.co.yournews.notify.fcm.token.service;
+package kr.co.yournews.notify.token.service;
 
-import kr.co.yournews.notify.fcm.token.repository.FcmTokenRepository;
+import kr.co.yournews.notify.token.repository.FcmTokenRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
