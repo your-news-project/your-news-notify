@@ -6,7 +6,7 @@ import kr.co.yournews.notify.fcm.sender.FcmNotificationSender;
 import kr.co.yournews.notify.fcm.sender.exception.FcmSendFailureException;
 import kr.co.yournews.notify.fcm.sender.response.FcmSendResult;
 import kr.co.yournews.notify.message.process.model.MessageProcessStatus;
-import kr.co.yournews.notify.message.process.model.MessageProcessClaim;
+import kr.co.yournews.notify.message.process.model.MessageProcess;
 import kr.co.yournews.notify.message.process.service.MessageProcessService;
 import kr.co.yournews.notify.token.service.FcmTokenService;
 import org.junit.jupiter.api.DisplayName;
@@ -64,7 +64,7 @@ class FcmNotificationConsumerTest {
     void cutoffThenSendToDlq() {
         // given
         when(processService.claim(anyString(), anyString(), eq(3)))
-                .thenReturn(MessageProcessClaim.claimed(3));
+                .thenReturn(MessageProcess.claimed(3));
         when(rabbitMqProperties.getDeadExchangeName()).thenReturn(DEAD_EXCHANGE);
         when(rabbitMqProperties.getRoutingKey()).thenReturn(ROUTING_KEY);
         when(fcmNotificationSender.sendNotification(anyString(), anyString(), anyString(), anyMap()))
@@ -85,7 +85,7 @@ class FcmNotificationConsumerTest {
     void notCutoffThenThrowForRetry() {
         // given
         when(processService.claim(anyString(), anyString(), eq(3)))
-                .thenReturn(MessageProcessClaim.claimed(1));
+                .thenReturn(MessageProcess.claimed(1));
         when(fcmNotificationSender.sendNotification(anyString(), anyString(), anyString(), anyMap()))
                 .thenReturn(FcmSendResult.failure("retryable"));
 
@@ -102,7 +102,7 @@ class FcmNotificationConsumerTest {
     void nonRetryRemoveInvalidToken() {
         // given
         when(processService.claim(anyString(), anyString(), eq(3)))
-                .thenReturn(MessageProcessClaim.claimed(1));
+                .thenReturn(MessageProcess.claimed(1));
         when(fcmNotificationSender.sendNotification(anyString(), anyString(), anyString(), anyMap()))
                 .thenReturn(FcmSendResult.invalidToken("bad-token"));
 
@@ -120,7 +120,7 @@ class FcmNotificationConsumerTest {
     void skipWhenAlreadyProcessed() {
         // given
         when(processService.claim(anyString(), anyString(), eq(3)))
-                .thenReturn(MessageProcessClaim.skipped(3, MessageProcessStatus.SUCCEEDED));
+                .thenReturn(MessageProcess.skipped(3, MessageProcessStatus.SUCCEEDED));
 
         // when
         fcmNotificationConsumer.handleMessage(dto);
