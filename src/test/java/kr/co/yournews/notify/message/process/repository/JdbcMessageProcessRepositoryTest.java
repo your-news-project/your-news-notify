@@ -1,6 +1,6 @@
 package kr.co.yournews.notify.message.process.repository;
 
-import kr.co.yournews.notify.message.process.model.MessageProcessClaim;
+import kr.co.yournews.notify.message.process.model.MessageProcess;
 import kr.co.yournews.notify.message.process.model.MessageProcessStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -44,7 +44,7 @@ class JdbcMessageProcessRepositoryTest {
                 .thenReturn(1);
 
         // when
-        MessageProcessClaim claim = jdbcMessageProcessRepository.claim(IDEMPOTENCY_KEY, TOKEN_HASH, MAX_ATTEMPT);
+        MessageProcess claim = jdbcMessageProcessRepository.claim(IDEMPOTENCY_KEY, TOKEN_HASH, MAX_ATTEMPT);
 
         // then
         assertTrue(claim.claimed());
@@ -67,7 +67,7 @@ class JdbcMessageProcessRepositoryTest {
         )).thenReturn(2);
 
         // when
-        MessageProcessClaim claim = jdbcMessageProcessRepository.claim(IDEMPOTENCY_KEY, TOKEN_HASH, MAX_ATTEMPT);
+        MessageProcess claim = jdbcMessageProcessRepository.claim(IDEMPOTENCY_KEY, TOKEN_HASH, MAX_ATTEMPT);
 
         // then
         assertTrue(claim.claimed());
@@ -79,7 +79,7 @@ class JdbcMessageProcessRepositoryTest {
     @DisplayName("claim - 재선점 실패 시 현재 상태 조회 결과를 skipped로 반환")
     void claimSkipByExistingStatus() {
         // given
-        MessageProcessClaim existing = MessageProcessClaim.skipped(3, MessageProcessStatus.SUCCEEDED);
+        MessageProcess existing = MessageProcess.skipped(3, MessageProcessStatus.SUCCEEDED);
 
         when(jdbcTemplate.update(contains("INSERT INTO message_process"), any(Object[].class)))
                 .thenThrow(new DuplicateKeyException("duplicate"));
@@ -92,7 +92,7 @@ class JdbcMessageProcessRepositoryTest {
         )).thenReturn(existing);
 
         // when
-        MessageProcessClaim claim = jdbcMessageProcessRepository.claim(IDEMPOTENCY_KEY, TOKEN_HASH, MAX_ATTEMPT);
+        MessageProcess claim = jdbcMessageProcessRepository.claim(IDEMPOTENCY_KEY, TOKEN_HASH, MAX_ATTEMPT);
 
         // then
         assertFalse(claim.claimed());
@@ -115,7 +115,7 @@ class JdbcMessageProcessRepositoryTest {
         )).thenReturn(null);
 
         // when
-        MessageProcessClaim claim = jdbcMessageProcessRepository.claim(IDEMPOTENCY_KEY, TOKEN_HASH, MAX_ATTEMPT);
+        MessageProcess claim = jdbcMessageProcessRepository.claim(IDEMPOTENCY_KEY, TOKEN_HASH, MAX_ATTEMPT);
 
         // then
         assertFalse(claim.claimed());

@@ -15,4 +15,6 @@ public class RabbitMqProperties {
     private String deadExchangeName;
     private String routingKey;
     private int retryTtl;
+    private int dlqDelayTtl;
+    private int dlqRetryTtl;
 }

@@ -83,11 +83,16 @@ public class RabbitMqConfig {
     }
 
     /**
-     * Dead Letter Queue 생성 (처리 실패 메시지 저장용)
+     * Dead Letter Delay Queue 생성
+     * DLQ 도착 메시지를 일정 시간 대기시킨 후 DLQ Process Queue로 이동
      */
     @Bean
     public Queue deadQueue() {
-        return new Queue(rabbitMqProperties.getQueueName() + ".dlq", true);
+        return QueueBuilder.durable(rabbitMqProperties.getQueueName() + ".dlq")
+                .withArgument("x-message-ttl", rabbitMqProperties.getDlqDelayTtl())
+                .withArgument("x-dead-letter-exchange", rabbitMqProperties.getDeadExchangeName())
+                .withArgument("x-dead-letter-routing-key", rabbitMqProperties.getRoutingKey() + ".dlq.process")
+                .build();
     }
 
     /**
@@ -98,6 +103,51 @@ public class RabbitMqConfig {
         return BindingBuilder.bind(deadQueue)
                 .to(deadExchange)
                 .with(rabbitMqProperties.getRoutingKey() + ".dlq");
+    }
+
+    /**
+     * Dead Letter Process Queue 생성
+     * 지연이 끝난 DLQ 메시지를 실제 처리하는 큐
+     */
+    @Bean
+    public Queue deadProcessQueue() {
+        return QueueBuilder.durable(rabbitMqProperties.getQueueName() + ".dlq.process")
+                .withArgument("x-dead-letter-exchange", rabbitMqProperties.getDeadExchangeName())
+                .withArgument("x-dead-letter-routing-key", rabbitMqProperties.getRoutingKey() + ".dlq.retry")
+                .build();
+    }
+
+    /**
+     * Dead Letter Process Queue - Exchange 바인딩
+     */
+    @Bean
+    public Binding deadProcessBinding(Queue deadProcessQueue, DirectExchange deadExchange) {
+        return BindingBuilder.bind(deadProcessQueue)
+                .to(deadExchange)
+                .with(rabbitMqProperties.getRoutingKey() + ".dlq.process");
+    }
+
+    /**
+     * Dead Letter Retry Queue 생성
+     * DLQ 처리 실패 시 일정 시간 뒤 DLQ Process Queue로 재전달
+     */
+    @Bean
+    public Queue deadRetryQueue() {
+        return QueueBuilder.durable(rabbitMqProperties.getQueueName() + ".dlq.retry")
+                .withArgument("x-message-ttl", rabbitMqProperties.getDlqRetryTtl())
+                .withArgument("x-dead-letter-exchange", rabbitMqProperties.getDeadExchangeName())
+                .withArgument("x-dead-letter-routing-key", rabbitMqProperties.getRoutingKey() + ".dlq.process")
+                .build();
+    }
+
+    /**
+     * Dead Letter Retry Queue - Exchange 바인딩
+     */
+    @Bean
+    public Binding deadRetryBinding(Queue deadRetryQueue, DirectExchange deadExchange) {
+        return BindingBuilder.bind(deadRetryQueue)
+                .to(deadExchange)
+                .with(rabbitMqProperties.getRoutingKey() + ".dlq.retry");
     }
 
     /**
@@ -129,4 +179,3 @@ public class RabbitMqConfig {
         return new Jackson2JsonMessageConverter();
     }
 }
-

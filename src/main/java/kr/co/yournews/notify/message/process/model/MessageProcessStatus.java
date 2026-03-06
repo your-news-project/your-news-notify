@@ -5,5 +5,6 @@ public enum MessageProcessStatus {
     RETRY_PENDING,              // 재시도 대기
     SUCCEEDED,                  // 처리 성공
     FAILED_RETRY_EXHAUSTED,     // 재시도 횟수 초과
-    FAILED_PERMANENT            // 영구적인 실패 (ex. 토큰 존재 x)
+    FAILED_PERMANENT,           // 영구적인 실패 (ex. 토큰 존재 x)
+    FAILED_FINAL                // DLQ 재시도까지 모두 실패한 최종 실패
 }

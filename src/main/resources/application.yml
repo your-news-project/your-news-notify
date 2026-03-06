@@ -20,6 +20,8 @@ rabbitmq:
   dead-exchange-name: ${RABBITMQ_DEAD_EXCHANGE_NAME:dead.exchange}
   routing-key: ${RABBITMQ_ROUTING_KEY:key}
   retry-ttl: ${RABBITMQ_RETRY_TTL:5000}
+  dlq-delay-ttl: ${RABBITMQ_DLQ_DELAY_TTL:1800000}
+  dlq-retry-ttl: ${RABBITMQ_DLQ_RETRY_TTL:60000}
 
 --- # firebase
 firebase:

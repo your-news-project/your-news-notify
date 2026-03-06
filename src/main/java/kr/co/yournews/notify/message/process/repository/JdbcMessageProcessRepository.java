@@ -1,7 +1,7 @@
 package kr.co.yournews.notify.message.process.repository;
 
 import kr.co.yournews.notify.message.process.model.MessageProcessStatus;
-import kr.co.yournews.notify.message.process.model.MessageProcessClaim;
+import kr.co.yournews.notify.message.process.model.MessageProcess;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Repository
 @RequiredArgsConstructor
@@ -27,7 +28,7 @@ public class JdbcMessageProcessRepository implements MessageProcessRepository {
      * @return : claim 성공/실패(스킵) 결과
      */
     @Override
-    public MessageProcessClaim claim(
+    public MessageProcess claim(
             String idempotencyKey,
             String tokenHash,
             int maxAttemptCount
@@ -49,9 +50,10 @@ public class JdbcMessageProcessRepository implements MessageProcessRepository {
                                 completed_at,
                                 last_error_code,
                                 last_error_message,
+                                dlq_attempt_count,
                                 created_at,
                                 updated_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                     idempotencyKey,
                     tokenHash,
@@ -62,11 +64,12 @@ public class JdbcMessageProcessRepository implements MessageProcessRepository {
                     null,
                     null,
                     null,
+                    0,
                     nowTs,
                     nowTs
             );
             if (inserted == 1) {
-                return MessageProcessClaim.claimed(1);
+                return MessageProcess.claimed(1);
             }
         } catch (DuplicateKeyException ignore) {
             // 이미 있는 키면 아래 전이(재처리 가능 상태인지 확인)로 진행
@@ -103,11 +106,11 @@ public class JdbcMessageProcessRepository implements MessageProcessRepository {
                     Integer.class,
                     idempotencyKey
             );
-            return MessageProcessClaim.claimed(attempt == null ? 1 : attempt);
+            return MessageProcess.claimed(attempt == null ? 1 : attempt);
         }
 
         //  현재 상태 조회 후 skip
-        MessageProcessClaim claim = jdbcTemplate.query(
+        MessageProcess claim = jdbcTemplate.query(
                 """
                         SELECT status, attempt_count
                         FROM message_process
@@ -117,7 +120,7 @@ public class JdbcMessageProcessRepository implements MessageProcessRepository {
                     if (!rs.next()) {
                         return null;
                     }
-                    return MessageProcessClaim.skipped(
+                    return MessageProcess.skipped(
                             rs.getInt("attempt_count"),
                             MessageProcessStatus.valueOf(rs.getString("status"))
                     );
@@ -126,7 +129,7 @@ public class JdbcMessageProcessRepository implements MessageProcessRepository {
         );
 
         if (claim == null) {
-            return MessageProcessClaim.skipped(0, MessageProcessStatus.RETRY_PENDING);
+            return MessageProcess.skipped(0, MessageProcessStatus.RETRY_PENDING);
         }
         return claim;
     }
@@ -149,13 +152,14 @@ public class JdbcMessageProcessRepository implements MessageProcessRepository {
                             last_error_message = NULL,
                             updated_at = ?
                         WHERE idempotency_key = ?
-                          AND status = ?
+                          AND status IN (?, ?)
                         """,
                 MessageProcessStatus.SUCCEEDED.name(),
                 nowTs,
                 nowTs,
                 idempotencyKey,
-                MessageProcessStatus.PROCESSING.name()
+                MessageProcessStatus.PROCESSING.name(),
+                MessageProcessStatus.FAILED_RETRY_EXHAUSTED.name()
         );
     }
 
@@ -222,6 +226,22 @@ public class JdbcMessageProcessRepository implements MessageProcessRepository {
     }
 
     /**
+     * DLQ 재시도까지 소진된 최종 실패 처리 메서드
+     *
+     * @param idempotencyKey : 멱등 키
+     * @param errorMessage   : 마지막 에러 메시지
+     */
+    @Override
+    public void markFailedFinal(String idempotencyKey, String errorMessage) {
+        markFailed(
+                idempotencyKey,
+                MessageProcessStatus.FAILED_FINAL,
+                "DLQ_RETRY_EXHAUSTED",
+                errorMessage
+        );
+    }
+
+    /**
      * 실패 상태 전이 처리 메서드
      * - PROCESSING 또는 RETRY_PENDING 상태에서만 실패 상태로 전이
      *
@@ -247,7 +267,7 @@ public class JdbcMessageProcessRepository implements MessageProcessRepository {
                             last_error_message = ?,
                             updated_at = ?
                         WHERE idempotency_key = ?
-                          AND status IN (?, ?)
+                          AND status IN (?, ?, ?)
                         """,
                 status.name(),
                 nowTs,
@@ -256,7 +276,60 @@ public class JdbcMessageProcessRepository implements MessageProcessRepository {
                 nowTs,
                 idempotencyKey,
                 MessageProcessStatus.PROCESSING.name(),
-                MessageProcessStatus.RETRY_PENDING.name()
+                MessageProcessStatus.RETRY_PENDING.name(),
+                MessageProcessStatus.FAILED_RETRY_EXHAUSTED.name()
+        );
+    }
+
+    /**
+     * 멱등 키 기준으로 메시지 처리 상태를 조회하는 메서드
+     * - 일반 claim 조회가 아니라 DLQ 재처리 판단용 조회
+     * - status 와 dlq_attempt_count 만 읽어 현재 재처리 가능 여부를 판단
+     *
+     * @param idempotencyKey : 멱등 키
+     * @return 메시지 처리 상태
+     */
+    @Override
+    public Optional<MessageProcess> findByIdempotencyKey(String idempotencyKey) {
+        MessageProcess messageProcess = jdbcTemplate.query(
+                """
+                        SELECT status, dlq_attempt_count
+                        FROM message_process
+                        WHERE idempotency_key = ?
+                        """,
+                rs -> {
+                    if (!rs.next()) {
+                        return null;
+                    }
+                    return MessageProcess.loaded(
+                            rs.getInt("dlq_attempt_count"),
+                            MessageProcessStatus.valueOf(rs.getString("status"))
+                    );
+                },
+                idempotencyKey
+        );
+        return Optional.ofNullable(messageProcess);
+    }
+
+    /**
+     * DLQ 재처리 시도 횟수를 1 증가시키는 메서드
+     *
+     * @param idempotencyKey : 멱등 키
+     */
+    @Override
+    public void increaseDlqAttempt(String idempotencyKey) {
+        LocalDateTime now = LocalDateTime.now();
+        Timestamp nowTs = Timestamp.valueOf(now);
+
+        jdbcTemplate.update(
+                """
+                        UPDATE message_process
+                        SET dlq_attempt_count = dlq_attempt_count + 1,
+                            updated_at = ?
+                        WHERE idempotency_key = ?
+                        """,
+                nowTs,
+                idempotencyKey
         );
     }
 }

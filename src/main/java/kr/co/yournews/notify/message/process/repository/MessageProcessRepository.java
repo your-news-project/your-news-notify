@@ -1,9 +1,11 @@
 package kr.co.yournews.notify.message.process.repository;
 
-import kr.co.yournews.notify.message.process.model.MessageProcessClaim;
+import kr.co.yournews.notify.message.process.model.MessageProcess;
+
+import java.util.Optional;
 
 public interface MessageProcessRepository {
-    MessageProcessClaim claim(String idempotencyKey, String tokenHash, int maxAttemptCount);
+    MessageProcess claim(String idempotencyKey, String tokenHash, int maxAttemptCount);
 
     void markSuccess(String idempotencyKey);
 
@@ -12,4 +14,10 @@ public interface MessageProcessRepository {
     void markFailedRetryExhausted(String idempotencyKey, String errorMessage);
 
     void markFailedPermanent(String idempotencyKey, String errorMessage);
+
+    void markFailedFinal(String idempotencyKey, String errorMessage);
+
+    Optional<MessageProcess> findByIdempotencyKey(String idempotencyKey);
+
+    void increaseDlqAttempt(String idempotencyKey);
 }
