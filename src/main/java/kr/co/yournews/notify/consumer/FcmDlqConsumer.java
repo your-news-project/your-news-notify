@@ -1,5 +1,6 @@
 package kr.co.yournews.notify.consumer;
 
+import kr.co.yournews.notify.config.properties.RabbitMqProperties;
 import kr.co.yournews.notify.consumer.dto.FcmMessageDto;
 import kr.co.yournews.notify.fcm.sender.FcmNotificationSender;
 import kr.co.yournews.notify.fcm.sender.exception.FcmSendFailureException;
@@ -11,6 +12,7 @@ import kr.co.yournews.notify.message.process.util.IdempotencyKeyUtil;
 import kr.co.yournews.notify.token.service.FcmTokenService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 
@@ -22,14 +24,21 @@ import java.util.Optional;
 @Slf4j
 @Component
 public class FcmDlqConsumer extends AbstractFcmConsumer {
+    private final RabbitMqProperties rabbitMqProperties;
+    private final RabbitTemplate rabbitTemplate;
+
     private static final int MAX_DLQ_RETRY = 3;
 
     public FcmDlqConsumer(
             FcmNotificationSender fcmNotificationSender,
             FcmTokenService fcmTokenService,
-            MessageProcessService processService
+            MessageProcessService processService,
+            RabbitMqProperties rabbitMqProperties,
+            RabbitTemplate rabbitTemplate
     ) {
         super(fcmNotificationSender, fcmTokenService, processService);
+        this.rabbitMqProperties = rabbitMqProperties;
+        this.rabbitTemplate = rabbitTemplate;
     }
 
     @RabbitListener(
@@ -68,6 +77,12 @@ public class FcmDlqConsumer extends AbstractFcmConsumer {
         if (!result.success()) {
             // 최대 재시도 횟수 도달 → 메시지 상태 업데이트 후 종료
             if (dlqRetryCount >= MAX_DLQ_RETRY) {
+                rabbitTemplate.convertAndSend(
+                        rabbitMqProperties.getDeadExchangeName(),
+                        rabbitMqProperties.getRoutingKey() + ".parking",
+                        message
+                );
+
                 processService.markFailedFinal(idempKey, result.message());
                 log.error("[FCM-DLQ] 최종 실패 - key={}, retry={}, reason={}",
                         idempKey, dlqRetryCount, result.message());
