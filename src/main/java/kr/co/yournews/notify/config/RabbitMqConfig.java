@@ -151,6 +151,26 @@ public class RabbitMqConfig {
     }
 
     /**
+     * Parking Lot Queue 생성
+     * DLQ 재처리 이후에도 복구되지 않은 메시지를 최종 보관
+     */
+    @Bean
+    public Queue parkingQueue() {
+        return QueueBuilder.durable(rabbitMqProperties.getQueueName() + ".parking")
+                .build();
+    }
+
+    /**
+     * Parking Lot Queue - Exchange 바인딩
+     */
+    @Bean
+    public Binding parkingBinding(Queue parkingQueue, DirectExchange deadExchange) {
+        return BindingBuilder.bind(parkingQueue)
+                .to(deadExchange)
+                .with(rabbitMqProperties.getRoutingKey() + ".parking");
+    }
+
+    /**
      * 메시지 리스너 컨테이너 설정
      */
     @Bean
