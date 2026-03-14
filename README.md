@@ -44,5 +44,4 @@
 ---
 
 ## 🗄️ ERD
-<img width="1234" height="781" alt="스크린샷 2025-09-11 오전 2 42 50" src="https://github.com/user-attachments/assets/8d93d08f-88fa-4aab-871f-147104b1ee7c" />
-
+<img width="1062" height="835" alt="Image" src="https://github.com/user-attachments/assets/47812f2b-c252-4ae9-a95a-c3634673b1de" />
