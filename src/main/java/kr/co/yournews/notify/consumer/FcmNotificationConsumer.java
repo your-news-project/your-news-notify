@@ -24,7 +24,7 @@ public class FcmNotificationConsumer extends AbstractFcmConsumer {
     private final RabbitMqProperties rabbitMqProperties;
     private final RabbitTemplate rabbitTemplate;
 
-    private static final int MAX_RETRY = 3;                 // 재시도 횟수
+    private static final int MAX_RETRY = 4;    // 총 시도 횟수
 
     public FcmNotificationConsumer(
             FcmNotificationSender fcmNotificationSender,
@@ -43,13 +43,13 @@ public class FcmNotificationConsumer extends AbstractFcmConsumer {
      * <p>
      * 1. FCM 서버에 푸시 알림을 전송
      * 2. 전송 결과에 따라 유효하지 않은 토큰을 삭제
-     * 3. 전송 실패 시 RuntimeException을 발생시켜 재시도 처리를 유도함
+     * 3. 전송 실패 시, 시도 횟수에 맞게 재시도 큐에 전송
      * 4. 재시도를 실패하면, DLQ로 이동
      *
      * @param message : (FCM 토큰, 알림 제목, 알림 내용)
      */
     @RabbitListener(
-            queues = "${rabbitmq.queue-name}",
+            queues = "${rabbitmq.main-queue-name}",
             containerFactory = "fcmListenerContainerFactory"
     )
     public void handleMessage(@Payload FcmMessageDto message) {
@@ -77,7 +77,7 @@ public class FcmNotificationConsumer extends AbstractFcmConsumer {
             if (claim.attemptCount() >= MAX_RETRY) {
                 rabbitTemplate.convertAndSend(
                         rabbitMqProperties.getDeadExchangeName(),
-                        rabbitMqProperties.getRoutingKey() + ".dlq",
+                        rabbitMqProperties.getDlqRoutingKey(),
                         message
                 );
 
@@ -87,16 +87,35 @@ public class FcmNotificationConsumer extends AbstractFcmConsumer {
                 return;
             }
 
-            log.warn("[FCM] 전송 실패 - token: {}, reason: {}, attempt={}",
-                    message.token(), result.message(), claim.attemptCount());
-
             // 재시도 가능 실패는 상태만 남기고 예외로 DLX 재큐잉
             processService.markRetryPending(idempKey, result.message());
-            // 컷오프 전: 예외 던져 NACK → 재시도 큐로 이동
-            throw new FcmSendFailureException(result.message());
+
+            String retryRoutingKey = resolveRetryRoutingKey(claim.attemptCount());
+
+            rabbitTemplate.convertAndSend(
+                    rabbitMqProperties.getRetryExchangeName(),
+                    retryRoutingKey,
+                    message
+            );
+
+            log.warn("[FCM] 재시도 큐 이동 - key={}, attempt={}, retryRoutingKey={}, reason={}",
+                    idempKey, claim.attemptCount(), retryRoutingKey, result.message());
+            return;
         }
 
         // 성공이면 최종 완료로 마킹
         processService.markSuccess(idempKey);
+        log.info("[FCM] 전송 성공 - key={}", idempKey);
+    }
+
+    private String resolveRetryRoutingKey(int attemptCount) {
+        return switch (attemptCount) {
+            case 1 -> rabbitMqProperties.getRetryRoutingKey() + ".1";
+            case 2 -> rabbitMqProperties.getRetryRoutingKey() + ".2";
+            case 3 -> rabbitMqProperties.getRetryRoutingKey() + ".3";
+            default -> throw new IllegalArgumentException(
+                    "지원하지 않는 재시도 횟수입니다. attemptCount=" + attemptCount
+            );
+        };
     }
 }
