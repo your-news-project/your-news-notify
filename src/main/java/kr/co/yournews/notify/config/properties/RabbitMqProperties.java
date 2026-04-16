@@ -9,12 +9,26 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "rabbitmq")
 @Getter @Setter
 public class RabbitMqProperties {
-    private String queueName;
-    private String exchangeName;
+    private String mainExchangeName;
     private String retryExchangeName;
     private String deadExchangeName;
-    private String routingKey;
-    private int retryTtl;
+
+    private String mainQueueName;
+    private String retryQueueName;
+    private String dlqQueueName;
+    private String parkingQueueName;
+
+    private String mainRoutingKey;
+    private String retryRoutingKey;
+    private String dlqRoutingKey;
+    private String parkingRoutingKey;
+
+    private int firstRetryTtl;
+    private int secondRetryTtl;
+    private int thirdRetryTtl;
+
     private int dlqDelayTtl;
-    private int dlqRetryTtl;
+    private int firstDlqRetryTtl;
+    private int secondDlqRetryTtl;
+    private int thirdDlqRetryTtl;
 }
