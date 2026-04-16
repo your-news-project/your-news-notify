@@ -27,7 +27,7 @@ public class FcmDlqConsumer extends AbstractFcmConsumer {
     private final RabbitMqProperties rabbitMqProperties;
     private final RabbitTemplate rabbitTemplate;
 
-    private static final int MAX_DLQ_RETRY = 3;
+    private static final int MAX_DLQ_RETRY = 4;
 
     public FcmDlqConsumer(
             FcmNotificationSender fcmNotificationSender,
@@ -42,7 +42,7 @@ public class FcmDlqConsumer extends AbstractFcmConsumer {
     }
 
     @RabbitListener(
-            queues = "#{rabbitMqProperties.queueName + '.dlq.process'}",
+            queues = "#{rabbitMqProperties.dlqQueueName + '.process'}",
             containerFactory = "fcmListenerContainerFactory"
     )
     public void handleDlqMessage(@Payload FcmMessageDto message) {
@@ -79,7 +79,7 @@ public class FcmDlqConsumer extends AbstractFcmConsumer {
             if (dlqRetryCount >= MAX_DLQ_RETRY) {
                 rabbitTemplate.convertAndSend(
                         rabbitMqProperties.getDeadExchangeName(),
-                        rabbitMqProperties.getRoutingKey() + ".parking",
+                        rabbitMqProperties.getParkingRoutingKey(),
                         message
                 );
 
@@ -89,10 +89,17 @@ public class FcmDlqConsumer extends AbstractFcmConsumer {
                 return;
             }
 
-            log.warn("[FCM-DLQ] 재처리 실패 - retry queue로 재전달 - key={}, retry={}, reason={}",
-                    idempKey, dlqRetryCount, result.message());
-            // 컷오프 전: 예외 던져 NACK → 재시도 큐로 이동
-            throw new FcmSendFailureException(result.message());
+            String retryRoutingKey = resolveDlqRetryRoutingKey(dlqRetryCount);
+
+            rabbitTemplate.convertAndSend(
+                    rabbitMqProperties.getDeadExchangeName(),
+                    retryRoutingKey,
+                    message
+            );
+
+            log.warn("[FCM-DLQ] 재처리 실패 - retry queue로 재전달 - key={}, retry={}, routingKey={}, reason={}",
+                    idempKey, dlqRetryCount, retryRoutingKey, result.message());
+            return;
         }
 
         // 성공이면 최종 완료로 마킹
@@ -100,4 +107,14 @@ public class FcmDlqConsumer extends AbstractFcmConsumer {
         log.info("[FCM-DLQ] 재처리 성공 - key={}", idempKey);
     }
 
+    private String resolveDlqRetryRoutingKey(int dlqRetryCount) {
+        return switch (dlqRetryCount) {
+            case 1 -> rabbitMqProperties.getDlqRoutingKey() + ".retry.1";
+            case 2 -> rabbitMqProperties.getDlqRoutingKey() + ".retry.2";
+            case 3 -> rabbitMqProperties.getDlqRoutingKey() + ".retry.3";
+            default -> throw new IllegalArgumentException(
+                    "지원하지 않는 DLQ 재시도 횟수입니다. dlqRetryCount=" + dlqRetryCount
+            );
+        };
+    }
 }

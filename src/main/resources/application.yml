@@ -14,14 +14,24 @@ spring:
     password: ${RABBITMQ_PASSWORD:}
 
 rabbitmq:
-  queue-name: ${RABBITMQ_QUEUE_NAME:queue}
-  exchange-name: ${RABBITMQ_EXCHANGE_NAME:exchange}
+  main-exchange-name: ${RABBITMQ_MAIN_EXCHANGE_NAME:main.exchange}
   retry-exchange-name: ${RABBITMQ_RETRY_EXCHANGE_NAME:retry.exchange}
   dead-exchange-name: ${RABBITMQ_DEAD_EXCHANGE_NAME:dead.exchange}
-  routing-key: ${RABBITMQ_ROUTING_KEY:key}
-  retry-ttl: ${RABBITMQ_RETRY_TTL:5000}
+  main-queue-name: ${RABBITMQ_MAIN_QUEUE_NAME:main.queue}
+  retry-queue-name: ${RABBITMQ_RETRY_QUEUE_NAME:retry.queue}
+  dlq-queue-name: ${RABBITMQ_DLQ_QUEUE_NAME:dead.queue}
+  parking-queue-name: ${RABBITMQ_PARKING_QUEUE_NAME:parking.queue}
+  main-routing-key: ${RABBITMQ_MAIN_ROUTING_KEY:main.key}
+  retry-routing-key: ${RABBITMQ_RETRY_ROUTING_KEY:retry.key}
+  dlq-routing-key: ${RABBITMQ_DLQ_ROUTING_KEY:dlq.key}
+  parking-routing-key: ${RABBITMQ_PARKING_ROUTING_KEY:parking.key}
+  first-retry-ttl: ${RABBITMQ_FIRST_RETRY_TTL:5000}
+  second-retry-ttl: ${RABBITMQ_SECOND_RETRY_TTL:10000}
+  third-retry-ttl: ${RABBITMQ_THIRD_RETRY_TTL:15000}
   dlq-delay-ttl: ${RABBITMQ_DLQ_DELAY_TTL:1800000}
-  dlq-retry-ttl: ${RABBITMQ_DLQ_RETRY_TTL:60000}
+  first-dlq-retry-ttl: ${RABBITMQ_DLQ_FIRST_RETRY_TTL:60000}
+  second-dlq-retry-ttl: ${RABBITMQ_DLQ_SECOND_RETRY_TTL:120000}
+  third-dlq-retry-ttl: ${RABBITMQ_DLQ_THIRD_RETRY_TTL:180000}
 
 --- # firebase
 firebase:
