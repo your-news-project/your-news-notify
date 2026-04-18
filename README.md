@@ -37,7 +37,7 @@
 ---
 
 ## ⚙️ Infra Architecture
-<img width="1341" height="861" alt="yournewsv2" src="https://github.com/user-attachments/assets/e7b40034-42f3-447d-8349-4f5dba0b8138" />
+<img width="1341" height="791" alt="yournewsv2" src="https://github.com/user-attachments/assets/e2a80754-004c-48cd-8489-8d45cc0dc71b" />
 
 🔗 **[앱 서버 GitHub Repository](https://github.com/your-news-project/your-news-v2)**
 
